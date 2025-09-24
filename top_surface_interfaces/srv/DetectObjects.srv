@@ -1,0 +1,4 @@
+# Service to take an RGB image and output Detection2DArray
+sensor_msgs/Image image
+---
+vision_msgs/Detection2DArray detections
