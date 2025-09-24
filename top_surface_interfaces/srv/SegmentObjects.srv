@@ -1,0 +1,5 @@
+# Service to take Detection2DArray and RGB image, return segmentation masks for each object
+vision_msgs/Detection2DArray detections
+sensor_msgs/Image image
+---
+sensor_msgs/Image[] masks
