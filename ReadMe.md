@@ -20,7 +20,7 @@ If you have issues with pylance trying to import custom service messages into py
 ```json
 {
     "python.analysis.extraPaths": [
-        "/home/brent/rbe4540/install/top_surface_interfaces/lib/python3.10/site-packages"
+        "{ROS2_WORKSPACE}/install/top_surface_interfaces/lib/python3.10/site-packages"
     ]
 }
 ```
