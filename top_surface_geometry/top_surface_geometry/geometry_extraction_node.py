@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
+from typing import Optional
 import rclpy
 from rclpy.node import Node
+from rclpy.service import Service
 from geometry_msgs.msg import Polygon, Point
 from top_surface_interfaces.srv import ExtractObjectGeometry
 
 
 class GeometryExtractionNode(Node):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('geometry_extraction_node')
         
         # Create service
-        self.service = self.create_service(
+        self.service: Service = self.create_service(
             ExtractObjectGeometry,
             'extract_object_geometry',
             self.extract_geometry_callback
@@ -19,7 +21,11 @@ class GeometryExtractionNode(Node):
         
         self.get_logger().info('Geometry extraction service ready')
     
-    def extract_geometry_callback(self, request, response):
+    def extract_geometry_callback(
+        self, 
+        request: ExtractObjectGeometry.Request, 
+        response: ExtractObjectGeometry.Response
+    ) -> ExtractObjectGeometry.Response:
         """
         TODO: Implement object geometry and center extraction from point cloud and mask
         - Take the input point cloud (request.cloud) and segmentation mask (request.mask)
@@ -43,7 +49,7 @@ class GeometryExtractionNode(Node):
         return response
 
 
-def main(args=None):
+def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
     node = GeometryExtractionNode()
     

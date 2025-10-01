@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
+from typing import Optional
 import rclpy
 from rclpy.node import Node
+from rclpy.service import Service
 from vision_msgs.msg import Detection2DArray
 from top_surface_interfaces.srv import DetectObjects
 
 
 class ObjectDetectorNode(Node):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('object_detector_node')
         
         # Create service
-        self.service = self.create_service(
+        self.service: Service = self.create_service(
             DetectObjects,
             'detect_objects',
             self.detect_objects_callback
@@ -19,7 +21,11 @@ class ObjectDetectorNode(Node):
         
         self.get_logger().info('Object detector service ready')
     
-    def detect_objects_callback(self, request, response):
+    def detect_objects_callback(
+        self, 
+        request: DetectObjects.Request, 
+        response: DetectObjects.Response
+    ) -> DetectObjects.Response:
         """
         TODO: Implement object detection on RGB image
         - Take the input RGB image (request.image)
@@ -38,7 +44,7 @@ class ObjectDetectorNode(Node):
         return response
 
 
-def main(args=None):
+def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
     node = ObjectDetectorNode()
     

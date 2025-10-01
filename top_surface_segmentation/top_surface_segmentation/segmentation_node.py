@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
+from typing import Optional
 import rclpy
 from rclpy.node import Node
+from rclpy.service import Service
 from sensor_msgs.msg import Image
 from top_surface_interfaces.srv import SegmentObjects
 
 
 class SegmentationNode(Node):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('segmentation_node')
         
         # Create service
-        self.service = self.create_service(
+        self.service: Service = self.create_service(
             SegmentObjects,
             'segment_objects',
             self.segment_objects_callback
@@ -19,7 +21,11 @@ class SegmentationNode(Node):
         
         self.get_logger().info('Segmentation service ready')
     
-    def segment_objects_callback(self, request, response):
+    def segment_objects_callback(
+        self, 
+        request: SegmentObjects.Request, 
+        response: SegmentObjects.Response
+    ) -> SegmentObjects.Response:
         """
         TODO: Implement object segmentation from detection boxes and RGB image
         - Take the input RGB image (request.image) and detections (request.detections)
@@ -47,7 +53,7 @@ class SegmentationNode(Node):
         return response
 
 
-def main(args=None):
+def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
     node = SegmentationNode()
     
