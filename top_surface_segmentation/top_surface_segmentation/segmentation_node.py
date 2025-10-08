@@ -22,8 +22,7 @@ class SegmentationNode(Node):
             self.segment_objects_callback
         )
 
-        self.table_mask_publisher = self.create_publisher(Image, 'table_mask', 10)
-        self.sky_mask_publisher = self.create_publisher(Image, 'sky_mask', 10)
+        self.all_mask_publisher = self.create_publisher(Image, 'all_mask', 10)
 
         self.br = CvBridge()
         
@@ -66,7 +65,7 @@ class SegmentationNode(Node):
         img: np.ndarray,
         min_area: int = 1000,
         max_area: Optional[int] = None
-    ) -> list[np.ndarray]:
+    ) -> tuple[list[np.ndarray], np.ndarray]:
         """
         takes in a single image and returns a list of binary masks
         img: single frame
@@ -95,7 +94,7 @@ class SegmentationNode(Node):
             obj_mask: np.ndarray = np.zeros_like(combinedMask)
             cv2.drawContours(obj_mask, [contour], -1, 255, -1)
             masks.append(obj_mask)
-        return masks
+        return masks, combinedMask
 
 
     def segment_objects_callback(
@@ -122,18 +121,17 @@ class SegmentationNode(Node):
             self.get_logger().error(f'CvBridge conversion failed: {e}')
             return response
 
-        masks: list[np.ndarray] = self.getObjectMasks(img_np)
+        masks, combinedMask = self.getObjectMasks(img_np)
+
+        all_masks_msg: Image = self.br.cv2_to_imgmsg(combinedMask, encoding='mono8')
+        self.all_mask_publisher.publish(all_masks_msg)
 
         # Convert masks to ROS Image messages and publish
         response.masks = []
         for i, mask_np in enumerate(masks):
             mask_msg: Image = self.br.cv2_to_imgmsg(mask_np, encoding='mono8')
             response.masks.append(mask_msg)
-            # Optionally publish first two masks as table/sky
-            if i == 0:
-                self.table_mask_publisher.publish(mask_msg)
-            elif i == 1:
-                self.sky_mask_publisher.publish(mask_msg)
+
 
         self.get_logger().info(f'Processed segment objects request - returning {len(response.masks)} masks')
         return response

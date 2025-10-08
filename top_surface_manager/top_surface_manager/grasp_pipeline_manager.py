@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence, cast
 
 import cv2
 import numpy as np
@@ -15,7 +15,6 @@ from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_srvs.srv import Trigger
 from top_surface_interfaces.srv import (
-    DetectObjects,
     ExtractObjectGeometry,
     SegmentObjects,
 )
@@ -67,9 +66,6 @@ class GraspPipelineManager(Node):
         )
 
         # Service clients (attach to same reentrant group)
-        self.object_detect_client: Client = self.create_client(
-            DetectObjects, 'detect_objects', callback_group=self.cb_group
-        )
         self.segment_object_client: Client = self.create_client(
             SegmentObjects, 'segment_objects', callback_group=self.cb_group
         )
@@ -119,50 +115,30 @@ class GraspPipelineManager(Node):
             return response
         self.get_logger().info("Data available starting grasp pipline...")
         
-        # # Call object detector service
-        # while not self.object_detect_client.wait_for_service(timeout_sec=1.0):
-        #     self.get_logger().info('Waiting for object detection service...')
-        # detect_req = DetectObjects.Request()
-        # detect_req.image = self.rgb_image
-        # future = self.object_detect_client.call_async(detect_req)
-        # rclpy.spin_until_future_complete(self, future)
-        # if future.result() is None:
-        #     self.get_logger().error('Object detection service call failed')
-        #     response.success = False
-        #     response.message = "Object detection service call failed."
-        #     self.data_frozen = False
-        #     return response
+        # Call segment object service
+        while not self.segment_object_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for object segmentation service...')
+        segment_req = SegmentObjects.Request()
+        segment_req.image = self.rgb_image
+        future = self.segment_object_client.call_async(segment_req)
+        rclpy.spin_until_future_complete(self, future)
+        if future.result() is None:
+            self.get_logger().error('Segmentation service call failed')
+            response.success = False
+            response.message = "Segmentation service call failed."
+            self.data_frozen = False
+            return response
         
-        # # Detections
-        # detections_future = future.result()
-        # assert isinstance(detections_future, DetectObjects.Response)
-        # detections: Detection2DArray = detections_future.detections
-        
-        # # Call segment object service
-        # while not self.segment_object_client.wait_for_service(timeout_sec=1.0):
-        #     self.get_logger().info('Waiting for object segmentation service...')
-        # segment_req = SegmentObjects.Request()
-        # segment_req.image = self.rgb_image
-        # segment_req.detections = detections
-        # future = self.segment_object_client.call_async(segment_req)
-        # rclpy.spin_until_future_complete(self, future)
-        # if future.result() is None:
-        #     self.get_logger().error('Segmentation service call failed')
-        #     response.success = False
-        #     response.message = "Segmentation service call failed."
-        #     self.data_frozen = False
-        #     return response
-        
-        # # Segmented masks
-        # segmented_future = future.result()
-        # assert isinstance(segmented_future, SegmentObjects.Response)
-        # segmented_detections: Sequence[Image] = cast(Sequence[Image], segmented_future.masks)
-        # if len(segmented_detections) == 0:
-        #     self.get_logger().error('Segmentation returned no masks')
-        #     response.success = False
-        #     response.message = "Segmentation returned no masks."
-        #     self.data_frozen = False
-        #     return response
+        # Segmented masks
+        segmented_future = future.result()
+        assert isinstance(segmented_future, SegmentObjects.Response)
+        segmented_detections: Sequence[Image] = cast(Sequence[Image], segmented_future.masks)
+        if len(segmented_detections) == 0:
+            self.get_logger().error('Segmentation returned no masks')
+            response.success = False
+            response.message = "Segmentation returned no masks."
+            self.data_frozen = False
+            return response
 
         # # Call shape from point cloud service
         # for obj_mask in segmented_detections:
@@ -172,47 +148,6 @@ class GraspPipelineManager(Node):
         #         response.message = "Segmentation returned empty mask."
         #         self.data_frozen = False
         #         return response
-
-        # For testing, use some example segmented detections
-        segmented_detections = []
-
-        def create_mask(shape, rgb_image):
-            # Get image size from the RGB image
-            cv_img = self.br.imgmsg_to_cv2(rgb_image, desired_encoding="bgr8")
-            height, width = cv_img.shape[:2]
-            mask = np.zeros((height, width), dtype=np.uint8)
-            center = (width // 2, height // 2)
-            if shape == "square":
-                side = min(width, height) // 4
-                top_left = (center[0] - side // 2, center[1] - side // 2)
-                bottom_right = (center[0] + side // 2, center[1] + side // 2)
-                cv2.rectangle(mask, top_left, bottom_right, 255, -1)
-            elif shape == "rectangle":
-                w, h = width // 3, height // 6
-                top_left = (center[0] - w // 2, center[1] - h // 2)
-                bottom_right = (center[0] + w // 2, center[1] + h // 2)
-                cv2.rectangle(mask, top_left, bottom_right, 255, -1)
-            elif shape == "triangle":
-                pts = np.array([
-                    [center[0], center[1] - height // 6],
-                    [center[0] - width // 8, center[1] + height // 6],
-                    [center[0] + width // 8, center[1] + height // 6]
-                ], np.int32)
-                cv2.fillPoly(mask, [pts], 255)
-            elif shape == "circle":
-                radius = min(width, height) // 8
-                cv2.circle(mask, center, radius, 255, -1)
-            elif shape == "ellipse":
-                axes = (width // 6, height // 12)
-                cv2.ellipse(mask, center, axes, 0, 0, 360, 255, -1)
-            return mask
-
-        shapes = ["square", "rectangle", "triangle", "circle", "ellipse"]
-        for shape in shapes:
-            mask = create_mask(shape, self.rgb_image)
-            img_msg = self.br.cv2_to_imgmsg(mask, encoding="mono8")
-            segmented_detections.append(img_msg)
-        self.get_logger().info("Made shapes")
         
         grasps: dict[int, list] = {}
         index=-1

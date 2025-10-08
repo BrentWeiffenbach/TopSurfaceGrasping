@@ -79,13 +79,6 @@ def generate_launch_description():
                 name="segmentation_node",
                 output="screen",
             ),
-            # Object Detector Node
-            Node(
-                package="top_surface_object_detector",
-                executable="object_detector_node",
-                name="object_detector_node",
-                output="screen",
-            ),
             # Geometry Extraction Node
             Node(
                 package="top_surface_geometry",
