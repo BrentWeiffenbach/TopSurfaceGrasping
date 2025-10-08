@@ -39,61 +39,71 @@ class GeometryExtractionNode(Node):
         request: ExtractObjectGeometry.Request, 
         response: ExtractObjectGeometry.Response
     ) -> ExtractObjectGeometry.Response:
-        mask = request.mask
-        cloud = request.cloud
-        assert isinstance(mask, Image)
-        assert isinstance(cloud, PointCloud2)
+        try:
+            self.get_logger().info("Received geometry extraction request")
+            mask = request.mask
+            cloud = request.cloud
+            assert isinstance(mask, Image)
+            assert isinstance(cloud, PointCloud2)
 
-        # Convert PointCloud2 to numpy array
-        points_xyz = pointcloud2_to_xyz_array(cloud)
+            # Convert PointCloud2 to numpy array
+            points_xyz = pointcloud2_to_xyz_array(cloud)
 
-        # Convert mask to numpy array
-        mask_np = np.array(mask.data, dtype=np.uint8).reshape(mask.height, mask.width)
+            # Convert mask to numpy array
+            mask_np = np.array(mask.data, dtype=np.uint8).reshape(mask.height, mask.width)
 
-        # Get indices of relevant pixels (mask > 0)
-        relevant_indices = np.argwhere(mask_np > 0)
+            # Get indices of relevant pixels (mask > 0)
+            relevant_indices = np.argwhere(mask_np > 0)
+            self.get_logger().info(f"Found {len(relevant_indices)} relevant pixels in mask")
+            # Map mask indices to point cloud indices (assuming organized cloud)
+            relevant_points = []
+            for y, x in relevant_indices:
+                idx = y * mask.width + x
+                if idx < points_xyz.shape[0]:
+                    relevant_points.append(points_xyz[idx])
 
-        # Map mask indices to point cloud indices (assuming organized cloud)
-        relevant_points = []
-        for y, x in relevant_indices:
-            idx = y * mask.width + x
-            if idx < points_xyz.shape[0]:
-                relevant_points.append(points_xyz[idx])
+            relevant_points = np.array(relevant_points)
+            self.get_logger().info(f"Extracted {relevant_points.shape[0]} relevant points from point cloud")
 
-        relevant_points = np.array(relevant_points)
+            if relevant_points.size == 0:
+                self.get_logger().warn('No points found in the masked region')
+                response.geometry = Polygon()
+                response.center = Point()
+                return response
+            
+            # Find the top surface by selecting points in the highest Z range
+            z_values = relevant_points[:, 2]
+            z_max = np.max(z_values)
+            z_thresh = 0.01
+            top_mask = z_values > (z_max - z_thresh)
+            top_points = relevant_points[top_mask]
 
-        if relevant_points.size == 0:
-            self.get_logger().warn('No points found in the masked region')
-            response.geometry = Polygon()
-            response.center = Point()
+            # Project top points to XY plane for 2D geometry extraction
+            top_points_xy = top_points[:, :2]
+
+            self.get_logger().info(f"Top surface has {top_points_xy.shape[0]} points")
+
+            # Compute convex hull for the polygon
+            if top_points_xy.shape[0] >= 3:
+                hull = ConvexHull(top_points_xy)
+                polygon_points = [Point32(x=float(top_points_xy[v, 0]), y=float(top_points_xy[v, 1]), z=0.0) for v in hull.vertices]
+                response.geometry = Polygon(points=polygon_points)
+            else:
+                response.geometry = Polygon()
+                self.get_logger().warn('Not enough points to form a polygon')
+            
+            self.get_logger().info(f"Extracted polygon with {len(response.geometry.points)} points")
+
+            # Compute center of mass of all relevant points and project to top surface
+            center_xyz = np.mean(relevant_points, axis=0)
+            center_xy = center_xyz[:2]
+            center_z = np.max(z_values)  # project to top surface
+            response.center = Point(x=float(center_xy[0]), y=float(center_xy[1]), z=float(center_z))
+            self.get_logger().info(f"Computed center at ({response.center.x}, {response.center.y}, {response.center.z})")
             return response
-        
-        # Find the top surface by selecting points in the highest Z range
-        z_values = relevant_points[:, 2]
-        z_max = np.max(z_values)
-        z_thresh = 0.01
-        top_mask = z_values > (z_max - z_thresh)
-        top_points = relevant_points[top_mask]
-
-        # Project top points to XY plane for 2D geometry extraction
-        top_points_xy = top_points[:, :2]
-
-        # Compute convex hull for the polygon
-        if top_points_xy.shape[0] >= 3:
-            hull = ConvexHull(top_points_xy)
-            polygon_points = [Point32(x=float(top_points_xy[v, 0]), y=float(top_points_xy[v, 1]), z=0.0) for v in hull.vertices]
-            response.geometry = Polygon(points=polygon_points)
-        else:
-            response.geometry = Polygon()
-
-        # Compute center of mass of all relevant points and project to top surface
-        center_xyz = np.mean(relevant_points, axis=0)
-        center_xy = center_xyz[:2]
-        center_z = np.max(z_values)  # project to top surface
-        response.center = Point(x=float(center_xy[0]), y=float(center_xy[1]), z=float(center_z))
-
-        return response
-
+        except Exception as e:
+            self.get_logger().error(f"Exception in geometry extraction: {e}")
+            return response
 
 def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
