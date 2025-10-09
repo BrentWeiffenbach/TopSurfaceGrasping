@@ -201,7 +201,11 @@ class GeometryExtractionNode(Node):
             if top_points.shape[0] > 0:
                 y_min_val = float(np.min(top_points[:, 1]))
                 y_max_val = float(np.max(top_points[:, 1]))
-                self.get_logger().info(f"Selected {top_points.shape[0]} top surface points (unique x,z), y range: min={y_min_val:.5f} max={y_max_val:.5f}")
+                # Only keep points within a threshold of min y
+                y_threshold = 0.01  # meters, adjust as needed
+                close_to_min_mask = top_points[:, 1] <= (y_min_val + y_threshold)
+                top_points = top_points[close_to_min_mask]
+                self.get_logger().info(f"Selected {top_points.shape[0]} top surface points (unique x,z, within {y_threshold}m of min y), from original size {relevant_points.size}, y range: min={y_min_val:.5f} max={y_max_val:.5f}")
             else:
                 y_min_val = 0.0
                 y_max_val = 0.0

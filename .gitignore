@@ -1,2 +1,37 @@
 .vscode
 __pycache__
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.xdv
+*.dvi
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.glg
+*.glo
+*.gls
+*.gls*
+*.ist
+*.acn
+*.acr
+*.alg
+*.loa
+*.lol
+*.thm
+*.pyg
+.minted*
+*_minted*
+# Optional: ignore PDFs if desired
+# *.pdf

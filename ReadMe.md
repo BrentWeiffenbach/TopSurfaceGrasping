@@ -1,6 +1,6 @@
 # Grasping using top surfaces
 
-![Project Architecture](TopGraspingArchiteture.png)
+![Project Architecture](submission/images/TopGraspingArchiteture.png)
 
 ## Project Setup
 
