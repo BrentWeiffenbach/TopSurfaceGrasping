@@ -28,8 +28,6 @@ setup(
     entry_points={
         'console_scripts': [
             'geometry_extraction_node = top_surface_geometry.geometry_extraction_node:main',
-            'cube_cloud_publisher_node = top_surface_geometry.cube_cloud_publisher:main',
-            'test_client_node = top_surface_geometry.test_client:main',
         ],
     },
 )
