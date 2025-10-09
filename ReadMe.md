@@ -23,7 +23,3 @@ Place this repository inside your ROS2 workspace src folder like a package. The 
 1. **Grasp Quality**
     - For each pair of contact points, compute grasp quality metrics: Minimum Singular Value, Isotropy, and Ellipsoid volume.
     - *Pipeline step:* The node evaluates each grasp candidate using these metrics to select the best grasp.
-
-1. **Grasp Search**
-    - Use optimization (e.g., hill climbing) to iteratively improve grasp position, maximizing the quality metrics.
-    - *Pipeline step:* The node currently selects the best grasp from sampled candidates; further optimization could be added.
