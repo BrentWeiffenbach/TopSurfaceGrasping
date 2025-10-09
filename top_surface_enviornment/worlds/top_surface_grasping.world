@@ -35,7 +35,7 @@
     <include>
       <uri>model://Mustard Bottle</uri>
       <name>mustard_bottle</name>
-      <pose>0 -0.3 0.6 1.57 0 1.57</pose>
+      <pose>0 -0.3 0.6 1.57 2.7 1.57</pose>
       <static>true</static>
     </include>
   </world>

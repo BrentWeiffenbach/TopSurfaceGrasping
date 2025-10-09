@@ -4,3 +4,4 @@ sensor_msgs/Image mask
 ---
 geometry_msgs/Polygon geometry
 geometry_msgs/Point center
+sensor_msgs/PointCloud2 top_surface_points

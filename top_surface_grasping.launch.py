@@ -1,10 +1,58 @@
 import os
+import math
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 
+def camera_to_world(x, y, z, roll, pitch, yaw):
+    # Reverse the roll, pitch, yaw transformation to get the original x, y, z
+    # Assuming roll, pitch, yaw are in radians and represent intrinsic Tait-Bryan angles (XYZ)
+    # Build rotation matrix from roll, pitch, yaw
+    cr = math.cos(roll)
+    sr = math.sin(roll)
+    cp = math.cos(pitch)
+    sp = math.sin(pitch)
+    cy = math.cos(yaw)
+    sy = math.sin(yaw)
+
+    # Rotation matrix (R = Rz(yaw) * Ry(pitch) * Rx(roll))
+    R = [
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp,     cp * sr,                cp * cr]
+    ]
+
+    # Apply inverse rotation to (x, y, z)
+    inv_R = [
+        [R[0][0], R[1][0], R[2][0]],
+        [R[0][1], R[1][1], R[2][1]],
+        [R[0][2], R[1][2], R[2][2]],
+    ]
+    orig_x = inv_R[0][0]*x + inv_R[0][1]*y + inv_R[0][2]*z
+    orig_y = inv_R[1][0]*x + inv_R[1][1]*y + inv_R[1][2]*z
+    orig_z = inv_R[2][0]*x + inv_R[2][1]*y + inv_R[2][2]*z
+    world_z = -orig_x
+    world_y = orig_z
+    world_x = orig_y
+
+    return world_x, world_y, world_z
+
+def rpy_to_matrix(roll, pitch, yaw):
+    cr = math.cos(roll)
+    sr = math.sin(roll)
+    cp = math.cos(pitch)
+    sp = math.sin(pitch)
+    cy = math.cos(yaw)
+    sy = math.sin(yaw)
+    # R = Rz(yaw) * Ry(pitch) * Rx(roll)
+    R = [
+        [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
+        [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
+        [-sp,   cp*sr,            cp*cr]
+    ]
+    return R
 
 def generate_launch_description():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,22 +92,39 @@ def generate_launch_description():
     )
     robot_description = {"robot_description": open(camera_urdf_path).read()}
 
+    camera_x = -0.25
+    camera_y = 0.0
+    camera_z = 1.3
+    camera_roll = 0
+    camera_pitch = 1.22
+    camera_yaw = 0
+
     spawn_camera = Node(
         package="gazebo_ros",
         executable="spawn_entity.py",
         arguments=[
-            "-file",
-            camera_urdf_path,
-            "-entity",
-            "camera",
-            "-x",
-            "-0.25",
-            "-z",
-            "1.3",
-            "-P",
-            "1.22",
+            "-file", camera_urdf_path,
+            "-entity", "camera",
+            "-x", str(camera_x), "-y", str(camera_y), "-z", str(camera_z),
+            "-R", str(camera_roll), "-P", str(camera_pitch), "-Y", str(camera_yaw),
         ],
         output="both",
+    )
+    
+    world_x, world_y, world_z = camera_to_world(
+        camera_x, camera_y, camera_z, camera_roll, camera_pitch, camera_yaw
+    )
+
+    world_roll, world_pitch, world_yaw = 0,0,1.22
+
+    static_world_tf_publisher = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_world_tf_publisher",
+        arguments=[
+            str(world_x), str(world_y), str(world_z), str(world_roll), str(world_pitch), str(world_yaw), "camera_link", "world"
+        ],
+        output="screen",
     )
 
     robot_state_publisher = Node(
@@ -101,5 +166,6 @@ def generate_launch_description():
             spawn_camera,
             # Publish robot state for camera
             robot_state_publisher,
+            static_world_tf_publisher
         ]
     )
