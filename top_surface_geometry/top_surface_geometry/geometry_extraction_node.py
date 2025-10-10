@@ -96,7 +96,8 @@ def points_to_contour_polygon(
     largest_contour = max(contours, key=cv2.contourArea)
 
     # Simplify contour to reduce number of points while preserving shape
-    epsilon = 0.007 * cv2.arcLength(largest_contour, True)
+    # increase epsilon for more simplification
+    epsilon = 0.0001 * cv2.arcLength(largest_contour, True)
     simplified_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
 
     # Convert back to world coordinates

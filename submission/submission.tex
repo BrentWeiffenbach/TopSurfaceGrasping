@@ -57,13 +57,23 @@ Finally, we have a grasp pipeline manager node which will manage the flow of dat
 
 Given an RGB image, we need to detect the objects in the image, and create a mask for each object. The \texttt{SegmentationNode} has a service \texttt{segment\_objects} which receives an RGB image from the pipeline manager, and returns a list of masks for each detected object. It processes the image by masking out background regions like the table and sky to isolate the objects. Then contours are found in the masked image, and if the area is large enough, a mask is created for the object. 
 
+Code for getting the masks:
+
+\begin{center}
+	\includegraphics[width=0.8\textwidth]{vision/backgroudmask.png}
+\end{center}
+
+\begin{center}
+	\includegraphics[width=0.8\textwidth]{vision/getobjectmasks.png}
+\end{center}
+
 \begin{center}
 	\includegraphics[width=0.8\textwidth]{masks.png}
 \end{center}
 
 \textbf{Step 3: Geometry Extraction}
 
-The \texttt{GeometryExtractionNode} has a service \texttt{extract\_object\_geometry} which receives a list of masks and a point cloud and returns a polygon representing the top surface and the center of mass projected onto the top surface. The node first masks the point cloud to isolate only relevant points of the object, then selects all the points with the minimum y-value (world coordinate system makes this the top surface), and projects these points into a 2D plane. Then using OpenCV contour detection, the top surface polygon is found. The center of mass is calculated by averaging the x and z coordinates of the top surface point cloud points, and using the minimum y-value for the y coordinate.
+The \texttt{GeometryExtractionNode} has a service \texttt{extract\_object\_geometry} which receives a list of masks and a point cloud and returns a polygon representing the top surface and the center of mass projected onto the top surface. The node first masks the point cloud to isolate only relevant points of the object, then selects all the points with the minimum y-value (world coordinate system makes this the top surface), and projects these points into a 2D plane. Then using OpenCV contour detection, the top surface polygon is found. The center of mass is calculated by averaging the x and z coordinates of the top surface point cloud points, and using the minimum y-value for the y coordinate. The code callback for the service is too long to include in the report, but the code can be found in the submission files.
 
 \begin{center}
 	\includegraphics[width=0.8\textwidth]{toppoints.png}
@@ -74,23 +84,114 @@ The \texttt{GeometryExtractionNode} has a service \texttt{extract\_object\_geome
 Once we have a polygon and center of mass, we can preform similar steps to previous homework assignments to find a grasp. We generate a list of grasp candiates on the object, and evaluate each candidate using grasp quality metrics. We find the minimum singular value, isotropy, and volume of ellipsoid metrics for each candidate, and select the candidate with the best metrics (if it has 2 metrics that are the best). Then these contact points can be visualized as markers in rviz.
 
 \begin{center}
-	% TODO: update image
-	% \includegraphics[width=0.8\textwidth]{final_grasps.png}
+	\includegraphics[width=0.8\textwidth]{graspmatrixcode.png}
 \end{center}
+
+Code for grasp candidates:
+
+\begin{verbatim}
+	def get_all_possible_grasps(
+		self,
+		geometry: Polygon,
+		centroid: Coordinate,
+		thetaDelta: float
+	) -> list[tuple[Coordinate, Coordinate]]:
+		"""Generate grasp candidates by radial ray casting (XZ plane) similar to grasp_proto logic.
+
+		For each angle theta we cast a ray from centroid in direction (cos theta, sin theta) in XZ,
+		find first boundary intersection p(theta) and its opposite p(theta+pi), forming a grasp pair.
+		"""
+		points_list = list(geometry.points)
+		n = len(points_list)
+		if n < 3:
+			self.get_logger().warn("Degenerate polygon (<3 vertices) in get_all_possible_grasps")
+			return []
+
+		# Precompute edges (wrap)
+		edges = [(points_list[i], points_list[(i + 1) % n]) for i in range(n)]
+
+		def ray_edge_intersection(theta: float, p0x: float, p0z: float) -> Optional[Point32]:
+			# Ray origin p0, direction (dx,dz)
+			dx = math.cos(theta)
+			dz = math.sin(theta)
+			best_t = math.inf
+			hit: Optional[Point32] = None
+			for a, b in edges:
+				# Edge in param form: a + u*(b-a), ray: p0 + t*d, need 2x2 solve in XZ
+				ex = b.x - a.x
+				ez = b.z - a.z
+				denom = dx * (-ez) - dz * (-ex)  # determinant of [[dx, -ex],[dz,-ez]] with rearrangement
+				if abs(denom) < 1e-9:
+					continue
+				# Solve using Cramer's rule for t,u from:
+				# p0x + dx*t = a.x + ex*u
+				# p0z + dz*t = a.z + ez*u
+				rx = a.x - p0x
+				rz = a.z - p0z
+				t = (rx * (-ez) - rz * (-ex)) / denom
+				u = (dx * rz - dz * rx) / denom
+				if t > 1e-6 and 0.0 <= u <= 1.0:  # forward ray, on segment
+					if t < best_t:
+						best_t = t
+						hit = Point32(x=p0x + dx * t, y=centroid.y, z=p0z + dz * t)
+			return hit
+
+		grasp_pairs: list[tuple[Point32, Point32]] = []
+		theta = 0.0
+		two_pi = 2 * math.pi
+		used_primary: list[Point32] = []
+		while theta < two_pi - 1e-6:
+			p1 = ray_edge_intersection(theta, centroid.x, centroid.z)
+			p2 = ray_edge_intersection(theta + math.pi, centroid.x, centroid.z)
+			if p1 and p2:
+				grasp_pairs.append((p1, p2))
+				used_primary.append(p1)
+			theta += thetaDelta
+
+		# Deduplicate (order invariant)
+		unique: list[tuple[Point32, Point32]] = []
+		for a, b in grasp_pairs:
+			dup = False
+			for c, d in unique:
+				same = math.dist((a.x, a.z), (c.x, c.z)) < 1e-3 and math.dist((b.x, b.z), (d.x, d.z)) < 1e-3
+				rev = math.dist((a.x, a.z), (d.x, d.z)) < 1e-3 and math.dist((b.x, b.z), (c.x, c.z)) < 1e-3
+				if same or rev:
+					dup = True
+					break
+			if not dup:
+				unique.append((a, b))
+
+		self.get_logger().info(f"Calculated {len(unique)} unique grasp candidate(s)")
+		for a, b in unique:
+			self.get_logger().debug(f" grasp pair XZ radial: ({a.x:.4f},{a.z:.4f}) <-> ({b.x:.4f},{b.z:.4f})")
+
+		result: list[tuple[Coordinate, Coordinate]] = []
+		for a, b in unique:
+			c1 = Coordinate(a.x - centroid.x, 0.0, a.z - centroid.z)
+			c2 = Coordinate(b.x - centroid.x, 0.0, b.z - centroid.z)
+			result.append((c1, c2))
+		return result
+\end{verbatim}
 
 \section*{Discussion}
 
+\begin{center}
+	\includegraphics[width=0.8\textwidth]{final_grasps.png}
+\end{center}
+
 We had resulting grasps with the following metrics:
 
-Object 1 (Standing Coke Can):
-% TODO
-Object 2 (Lying Down Coke Can):
-% TODO
-Object 3 (Banana):
-% TODO
-Object 4 (Mustard Bottle):
-% TODO
+\begin{itemize}
+	\item \textbf{Object 1 (Standing Coke Can):} \\
+	Best grasp with $\min\_sv=0.0428$, $volume=0.3588$, $isotropy=0.0303$
+	\item \textbf{Object 2 (Lying Down Coke Can):} \\
+	Best grasp with $\min\_sv=0.0870$, $volume=0.7286$, $isotropy=0.0615$
+	\item \textbf{Object 3 (Mustard Bottle):} \\
+	Best grasp with $\min\_sv=0.1209$, $volume=1.0130$, $isotropy=0.0855$
+	\item \textbf{Object 4 (Banana):} \\
+	Best grasp with $\min\_sv=0.0892$, $volume=0.7476$, $isotropy=0.0631$
+\end{itemize}
 
-As seen in the images, the grasps are reasonably placed and could sufficently pick up the objects. 
+As seen in the images, the grasps are reasonably placed and could sufficently pick up the objects. Our best grasp was on the mustard bottle, which is the object with the largest top surface area. The grasps on the two coke cans are also good, with the grasp on the lying down can being better than the standing can. The grasp on the banana is the worst, which makes sense as the top surface is very small and curved. We also are modeling the grasps as hard contacts, which could result in these grasps not being the exact ideal grasps a human would use. 
 
 \end{document}

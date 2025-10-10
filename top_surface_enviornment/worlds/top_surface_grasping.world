@@ -30,7 +30,7 @@
     <include>
       <uri>model://Banana for Scale</uri>
       <name>banana_for_scale</name>
-      <pose>0 -0.15 0.6 1.57 -1.57 1.57</pose>
+      <pose>0 -0.15 0.6 1.52 -1.2 1.57</pose>
     </include>
     <include>
       <uri>model://Mustard Bottle</uri>
